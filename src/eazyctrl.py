@@ -1,7 +1,8 @@
 """
-Tools for monitoring and controlling Eazy Controls KWL (air
-exchanger) devices via Modbus/TCP.
+Contains tools for monitoring and controlling Eazy Controls KWL (air exchanger)
+devices via Modbus/TCP.
 """
+
 import random
 import socket
 import struct
