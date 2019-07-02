@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+import argparse
+from eazyctrl import EazyController
+
+
+def main():
+    args = parse_command_line_args()
+
+
+def main_getvar(args):
+    ctrl = EazyController(args.host)
+    varvalue = ctrl.get_variable(args.varname, args.varlen)
+    ctrl.close()
+    print(varvalue)
+
+
+def main_setvar(args):
+    ctrl = EazyController(args.host)
+    varvalue = ctrl.set_variable(args.varname, args.varval)
+    ctrl.close()
+
+
+def main_getftr(args):
+    ctrl = EazyController(args.host)
+    varvalue = ctrl.get_feature(args.feature)
+    ctrl.close()
+    print(varvalue)
+
+
+def main_setftr(args):
+    ctrl = EazyController(args.host)
+    ctrl.set_feature(args.feature, args.value)
+    ctrl.close()
+    
+
+def parse_command_line_args():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+
+    msg = 'queries a given feature'
+    getftr_parser = subparsers.add_parser('get', help=msg)
+    msg = 'host name or ip-address of air exchanger'
+    getftr_parser.add_argument('host', help=msg)
+    msg = 'feature to query'
+    getftr_parser.add_argument('feature', help=msg)
+    getftr_parser.set_defaults(func=main_getftr)
+
+    msg = 'sets a given feature'
+    setftr_parser = subparsers.add_parser('set', help=msg)
+    msg = 'host name or ip-address of air exchanger'
+    setftr_parser.add_argument('host', help=msg)
+    msg = 'feature to set'
+    setftr_parser.add_argument('feature', help=msg)
+    msg = 'desired new value'
+    setftr_parser.add_argument('value', help=msg)
+    setftr_parser.set_defaults(func=main_setftr)
+
+    msg = 'retrieves the value of a variable'
+    getvar_parser = subparsers.add_parser('getvar', help=msg)
+    msg = 'host name or ip-address of air exchanger'
+    getvar_parser.add_argument('host', help=msg)
+    msg = 'name of the variable to be queried'    
+    getvar_parser.add_argument('varname', help=msg)
+    msg = 'number of bytes to fetch from the host'
+    getvar_parser.add_argument('varlen', type=int, help=msg)
+    getvar_parser.set_defaults(func=main_getvar)
+
+    msg = 'sets the value of a given variable'
+    setvar_parser = subparsers.add_parser('setvar', help=msg)
+    msg = 'host name or ip-address of air exchanger'
+    setvar_parser.add_argument('host', help=msg)
+    msg = 'name of the variable to be set'    
+    setvar_parser.add_argument('varname', help=msg)
+    msg = 'desired new variable value'
+    setvar_parser.add_argument('varval', help=msg)
+    setvar_parser.set_defaults(func=main_setvar)
+    args = parser.parse_args()
+    if 'func' in args:
+        args.func(args)
+    else:
+        parser.error('You have to specify a subcommand')
+
+
+if __name__ == '__main__':
+    main()
