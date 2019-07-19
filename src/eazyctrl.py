@@ -2,7 +2,7 @@
 Contains tools for monitoring and controlling Eazy Controls KWL (air exchanger)
 devices via Modbus/TCP.
 """
-
+import time
 import random
 import socket
 import struct
@@ -13,6 +13,9 @@ _MODBUS_TCP_PORT = 502
 _RECV_BUFFER_SIZE = 1024
 
 _SOCKET_TIMEOUT = 10.0
+
+_READ_VAR_NR_TRIALS = 10
+_READ_VAR_TIMEOUT_RANGE = 0.1, 0.5
 
 
 _KWL_FEATURES = {
@@ -137,7 +140,8 @@ class ModbusMessage(NamedByteArray):
 
     def __init__(self, fields, minsize, template=None):
         super().__init__(fields, minsize, template)
-        self._update_length()
+        if template is not None:
+            self._update_length()
 
 
     def __setitem__(self, fieldname, fieldvalue):
@@ -201,7 +205,7 @@ class EazyCommunicator:
 
 
     def close(self):
-        self._socket.shutdown(socket.SHUT_RD)
+        self._socket.shutdown(socket.SHUT_RDWR)
         self._socket.close()
 
 
@@ -229,13 +233,13 @@ class EazyCommunicator:
             print('Exception', respmsg['exception_code'])
 
 
-    def read_variable(self, varname, varlen):
+    def read_variable(self, varnamelen, varlen):
 
-        answerlen = len(varname) + 1 + varlen
+        answerlen = varnamelen + 1 + varlen
         datalen = (answerlen + 2) // 2 * 2
 
-        self._transid += 1
         sendmsg = Modbus03Request()
+        self._transid += 1
         sendmsg['transaction_identifier'] = self._transid
         sendmsg['unit_identifier'] = _KWL_UNIT_ID
         sendmsg['starting_address'] = 1
@@ -249,8 +253,8 @@ class EazyCommunicator:
             print('Exception:', respmsg['exception_code'])
             return None
         else:
-            answer = respmsg['registers_value'][len(varname) + 1 :]
-            return answer.rstrip(b'\x00').decode('ascii')
+            answer = respmsg['registers_value'].rstrip(b'\x00').decode('ascii')
+            return answer[:varnamelen], answer[varnamelen + 1 :]
 
 
 class EazyController:
@@ -264,12 +268,20 @@ class EazyController:
 
 
     def get_variable(self, varname, varlen, convfunc=None):
-        self._comm.write_variable(varname)
-        answer = self._comm.read_variable(varname, varlen)
-        if convfunc is None:
-            return answer
-        else:
-            return convfunc(answer)
+        
+        for itrial in range(_READ_VAR_NR_TRIALS):
+            self._comm.write_variable(varname)
+            varnamelen = len(varname)
+            recvvarname, varval = self._comm.read_variable(len(varname), varlen)
+            if recvvarname == varname:
+                if convfunc is None:
+                    return varval
+                else:
+                    return convfunc(varval)
+            elif itrial < _READ_VAR_NR_TRIALS - 1:
+                time.sleep(random.uniform(*_READ_VAR_TIMEOUT_RANGE))
+        print('Could not get value for variable ' + varname)
+        return None
 
 
     def set_variable(self, varname, varval, convfunc=None):
