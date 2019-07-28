@@ -2,12 +2,12 @@
 
 Python module and command line tool to monitor and control the air exchangers of
 Helios (KWL EasyControls) via their Modbus/TCP interface. It should allow for an
-easy integration of the air exchanger into smart home systems (e.g. via Home
+easy integration of the air exchanger into smart home systems (e.g. into Home
 Assistant).
 
 **IMPORTANT NOTE**: The routines and the command line tool are not provided and
-have been not approved by the Helios GmbH. They were created based on the
-publicly available documents about the EasyControls Modbus/TCP interface and
+have been not checked or approved by the Helios GmbH. They were created based on
+the publicly available documents about the EasyControls Modbus/TCP interface and
 about the Modbus/TCP protocol. They were only tested with a Helios KWL EC 300 W
 air exchanger. **Use them on your own risk**.
 
