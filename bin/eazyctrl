@@ -53,7 +53,7 @@ _RECV_BUFFER_SIZE = 1024
 _SOCKET_TIMEOUT = 10.0
 
 # Nr. of times communication should be tried in case of conflicts
-_READ_VAR_NR_TRIALS = 5
+_READ_VAR_NR_TRIALS = 3
 
 # Minimal and maximal waiting time in seconds between trials
 _READ_VAR_TIMEOUT_RANGE = 0.1, 0.5
@@ -79,19 +79,19 @@ _FIELDS_MODBUS_HEADER = {
     'application_data': ((7, None), None),
 }
 
-_FIELDS_03_REQUEST_PDU = {
+_FIELDS_MODBUS_03_REQUEST = {
     'function_code': ((7, 8), 'B'),
     'starting_address': ((8, 10), '>H'),
     'quantity_of_registers': ((10, 12), '>H'),
 }
 
-_FIELDS_03_RESPONSE_PDU = {
+_FIELDS_MODBUS_03_RESPONSE = {
     'function_code': ((7, 8), 'B'),
     'byte_count': ((8, 9), 'B'),
     'registers_value': ((9, None), None),
 }
 
-_FIELDS_16_REQUEST_PDU = {
+_FIELDS_MODBUS_16_REQUEST = {
     'function_code': ((7, 8), 'B'),
     'starting_address': ((8, 10), '>H'),
     'quantity_of_registers': ((10, 12), '>H'),
@@ -99,13 +99,13 @@ _FIELDS_16_REQUEST_PDU = {
     'registers_value': ((13, None), None),
 }
 
-_FIELDS_16_RESPONSE_PDU = {
+_FIELDS_MODBUS_16_RESPONSE = {
     'function_code': ((7, 8), 'B'),
     'starting_address': ((8, 10), '>H'),
     'quantity_of_registers': ((10, 12), '>H'),
 }
 
-_FIELDS_ERROR_PDU = {
+_FIELDS_MODBUS_ERROR = {
     'error_code': ((7, 8), 'B'),
     'exception_code': ((8, 9), 'B'),
 }
@@ -204,9 +204,20 @@ class ModbusMessage(NamedByteArray):
 
     """
 
-    def __init__(self, fields, *args):
+    def __init__(self, appdatafields, *args):
+        """Initialises a modbus message.
+
+        Args:
+            appdatafields: Extra (application data) fields beyond the standard
+                modbus header. The initialised object will contain the standar
+                modbus headers ('transaction_identifier', 'protocol_identifier',
+                'length', 'unit_identifier' and 'application_data'), and
+                additionally the provided fields here. The field
+                'application_data' allows to access everything beyond modbus
+                header as one field.
+        """
         allfields = dict(list(_FIELDS_MODBUS_HEADER.items())
-                         + list(fields.items()))
+                         + list(appdatafields.items()))
         super().__init__(allfields, *args)
         self._update_length()
 
@@ -225,7 +236,7 @@ class Modbus03Request(ModbusMessage):
     """Represents a modbus 03 request as a named byte array."""
 
     def __init__(self, *args):
-        super().__init__(_FIELDS_03_REQUEST_PDU, *args)
+        super().__init__(_FIELDS_MODBUS_03_REQUEST, *args)
         self['function_code'] = 3
 
 
@@ -233,7 +244,7 @@ class Modbus03Response(ModbusMessage):
     """Represents a modbus 03 response as a named byte array."""
 
     def __init__(self, *args):
-        super().__init__(_FIELDS_03_RESPONSE_PDU, *args)
+        super().__init__(_FIELDS_MODBUS_03_RESPONSE, *args)
         self['function_code'] = 3
 
 
@@ -241,7 +252,7 @@ class Modbus16Request(ModbusMessage):
     """Represents a modbus 16 request as a named byte array."""
 
     def __init__(self, *args):
-        super().__init__(_FIELDS_16_REQUEST_PDU, *args)
+        super().__init__(_FIELDS_MODBUS_16_REQUEST, *args)
         self['function_code'] = 16
 
 
@@ -249,15 +260,24 @@ class Modbus16Response(ModbusMessage):
     """Represents a modbus 03 response as a named byte array."""
 
     def __init__(self, *args):
-        super().__init__(_FIELDS_16_RESPONSE_PDU, *args)
+        super().__init__(_FIELDS_MODBUS_16_RESPONSE, *args)
         self['function_code'] = 16
 
 
-class ModbusErrorMessage(ModbusMessage):
+class ModbusErrorResponse(ModbusMessage):
     """Represents a modbus error message as a named byte array."""
 
     def __init__(self, *args):
-        super().__init__(_FIELDS_ERROR_PDU, *args)
+        super().__init__(_FIELDS_MODBUS_ERROR, *args)
+
+
+class UnexpectedModbusResponse(Exception):
+    """Raised if the modbus response can not be interpreted"""
+
+    def __init__(self, msg=None, sendmsg=None, response=None):
+        super().__init__(msg)
+        self.sendmsg = sendmsg
+        self.response = response
 
 
 class EazyCommunicator:
@@ -323,10 +343,20 @@ class EazyCommunicator:
         self._socket.sendall(sendmsg)
 
         response = self._socket.recv(_RECV_BUFFER_SIZE)
-        respmsg = Modbus16Response(response)
-        if respmsg['function_code'] != 16:
-            respmsg = ModbusErrorMessage(response)
-            print('Exception', respmsg['exception_code'])
+        exc = None
+        try:
+            respmsg = Modbus16Response(response)
+        except ValueError:
+            msg = "Unexpected modbus response (probably modbus error)"
+            exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                           response=response)
+        else:
+            if respmsg['function_code'] != 16:
+                msg = "Unexpected function code in modbus response"
+                exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                               response=response)
+        if exc is not None:
+            raise exc
 
 
     def read_variable(self, varnamelen, varlen):
@@ -353,11 +383,21 @@ class EazyCommunicator:
         self._socket.sendall(sendmsg)
 
         response = self._socket.recv(_RECV_BUFFER_SIZE)
-        respmsg = Modbus03Response(response)
-        if respmsg['function_code'] != 3:
-            respmsg = ModbusErrorMessage(response)
-            print('Exception:', respmsg['exception_code'])
-            return None
+        exc = None
+        try:
+            respmsg = Modbus03Response(response)
+        except ValueError:
+            msg = "Unexpected modbus response (probably modbus error)"
+            exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                           response=response)
+
+        else:
+            if respmsg['function_code'] != 3:
+                msg = "Unexpected function code in modbus response"
+                exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                               response=response)
+        if exc is not None:
+            raise exc
         answer = respmsg['registers_value'].rstrip(b'\x00').decode('ascii')
         return answer[:varnamelen], answer[varnamelen + 1 :]
 
@@ -422,16 +462,22 @@ class EazyController:
 
         """
         for itrial in range(_READ_VAR_NR_TRIALS):
+            if itrial:
+                time.sleep(random.uniform(*_READ_VAR_TIMEOUT_RANGE))
             with EazyCommunicator(self._server, *self._serverargs) as comm:
-                comm.write_variable(varname)
+                try:
+                    comm.write_variable(varname)
+                except UnexpectedModbusResponse:
+                    continue
                 varnamelen = len(varname)
-                recvvarname, varval = comm.read_variable(varnamelen, varlen)
+                try:
+                    recvvarname, varval = comm.read_variable(varnamelen, varlen)
+                except UnexpectedModbusResponse:
+                    continue
             if recvvarname == varname:
                 if conversion is None:
                     return varval
                 return conversion(varval)
-            elif itrial < _READ_VAR_NR_TRIALS - 1:
-                time.sleep(random.uniform(*_READ_VAR_TIMEOUT_RANGE))
         return None
 
 
@@ -440,11 +486,13 @@ class EazyController:
 
         Args:
             varname: Name of the variable to set.
+
             varval: Value to set. It should be either the proper string
                 representation of the variable which can be directly sent
                 to the server, or a Python type which is then converted
                 using the optional conversion argument.
                 as the response of the server)
+
             conversion: Function for converting the variable value into the
                 proper string representation which can be sent to the server
                 directly. Default: None -- no conversion is made, the variable
@@ -452,6 +500,10 @@ class EazyController:
                 The value of the argument can be either a formatting string or a
                 function expecting one argument and returning the string
                 representation which is then sent to the server.
+
+        Returns:
+            True if no error occured during setting the variable, False
+            otherwise.
         """
         if conversion is None:
             varcontent = varval
@@ -460,8 +512,16 @@ class EazyController:
         else:
             varcontent = conversion(varval)
         vardef = "{}={}".format(varname, varcontent)
-        with EazyCommunicator(self._server, *self._serverargs) as comm:
-            comm.write_variable(vardef)
+        for itrial in range(_READ_VAR_NR_TRIALS):
+            if itrial:
+                time.sleep(random.uniform(*_READ_VAR_TIMEOUT_RANGE))
+            with EazyCommunicator(self._server, *self._serverargs) as comm:
+                try:
+                    comm.write_variable(vardef)
+                except UnexpectedModbusResponse:
+                    continue
+            return True
+        return False
 
 
     def get_feature(self, feature):
@@ -493,7 +553,7 @@ class EazyController:
         varname, _, _, setconv = featureparams
         if setconv is None:
             raise ValueError("Feature '" + feature + "' is read-only")
-        self.set_variable(varname, featureval, setconv)
+        return self.set_variable(varname, featureval, setconv)
 
 
     @staticmethod
@@ -527,29 +587,44 @@ def _eazyctrl_list(_):
     print("-" * 46)
     for feature, featureparams in EazyController.get_feature_list():
         rw = 'rw' if featureparams['rw'] else 'r'
-        print("{:30s} {:6s} {:8s}".format(feature, rw, featureparams['varname']))
+        print("{:30s} {:6s} {:8s}"\
+              .format(feature, rw, featureparams['varname']))
 
 
 def _eazyctrl_getvar(args):
     ctrl = EazyController(args.host)
     varvalue = ctrl.get_variable(args.varname, args.varlen)
+    if varvalue is None:
+        _eazyctrl_error("Could not get variable '{}'".format(args.varname))
     print(varvalue)
 
 
 def _eazyctrl_setvar(args):
     ctrl = EazyController(args.host)
-    ctrl.set_variable(args.varname, args.varval)
+    success = ctrl.set_variable(args.varname, args.varval)
+    if not success:
+        _eazyctrl_error("Could not set variable '{}'".format(args.feature))
 
 
 def _eazyctrl_getftr(args):
     ctrl = EazyController(args.host)
-    varvalue = ctrl.get_feature(args.feature)
+    try:
+        varvalue = ctrl.get_feature(args.feature)
+    except ValueError as exc:
+        _eazyctrl_error(exc.args[0])
+    if varvalue is None:
+        _eazyctrl_error("Could not get feature '{}'".format(args.feature))
     print(varvalue)
 
 
 def _eazyctrl_setftr(args):
     ctrl = EazyController(args.host)
-    ctrl.set_feature(args.feature, args.value)
+    try:
+        success = ctrl.set_feature(args.feature, args.value)
+    except ValueError as exc:
+        _eazyctrl_error(exc.args[0])
+    if not success:
+        _eazyctrl_error("Could not set feature '{}'".format(args.feature))
 
 
 def _eazyctrl_parse_cmd_line_args():
@@ -605,6 +680,11 @@ def _eazyctrl_parse_cmd_line_args():
     else:
         parser.error('You have to specify a subcommand')
 
+
+def _eazyctrl_error(message):
+    import sys
+    sys.stderr.write("Error: " + message + "\n")
+    sys.exit(1)
 
 if __name__ == '__main__':
     run_eazyctrl()
