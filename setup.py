@@ -11,7 +11,7 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
 setup(
     name='eazyctrl',
 
-    version='0.1',
+    version='0.2',
 
     description='Monitoring and controlling Easy Controls KWL (air exchanger)'\
         'devices via Modbus/TCP.',
