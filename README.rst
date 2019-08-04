@@ -4,13 +4,13 @@ EazyCtrl
 
 Python module and command line tool to monitor and control the air exchangers of
 Helios (KWL EasyControls) via their Modbus/TCP interface. It allows for an easy
-command line handling of the devices without the need of their web interface as
-well as their integration into smart home systems (e.g. Home Assistant).
+command line handling of the devices and for a smooth integration of those into
+smart home systems (e.g. Home Assistant).
 
 **Important note**: The module and the command line tool were created based on
-the publicly available documents about the EasyControls Modbus/TCP interface and
-about the Modbus/TCP protocol. They were only tested with a Helios KWL EC 300 W
-air exchanger. **Use them on your own risk**.
+the publicly accessible documentation for the EasyControls Modbus/TCP interface
+and for the Modbus/TCP protocol. They were only tested with a Helios KWL EC 300
+W air exchanger. **Use them on your own risk**.
 
 The tools are distributed under the terms of the *2-clause BSD License*.
 
@@ -18,7 +18,8 @@ The tools are distributed under the terms of the *2-clause BSD License*.
 Installing
 ==========
 
-EazyCtrl needs a recent Python 3 interpreter (has been tested with Python 3.6).
+EazyCtrl should work with any recent Python 3 interpreters. (It has been tested
+with Python 3.6).
 
 Use Pythons command line installer ``pip`` to install it::
 
@@ -38,12 +39,12 @@ options, issue ::
 
   eazyctrl -h
 
-If you want help about a given subcommand, you should add the subcommand name
-before the ``-h`` option, e.g. ::
+If you want help about a given subcommand, add the subcommand name before the
+``-h`` option, e.g. ::
 
   eazyctrl set -h
 
-would list the available options for the ``set`` subcommand.
+will list the available options for the ``set`` subcommand.
 
 
 Obtaining the feature list
@@ -52,11 +53,10 @@ Obtaining the feature list
 In order to list the features which you can access through ``eazyctrl``, use the
 ``list`` subcommand::
 
-  eazytrl list
+  eazyctrl list
 
 This would return a table containing the feature names, their access flag
-(read-only or read-write) and the corresponding variable, which it manipulates,
-e.g.::
+(read-only or read-write) and the corresponding variable, e.g.::
 
   Feature name                   Access Variable
   ----------------------------------------------
@@ -68,9 +68,9 @@ e.g.::
 
 
 Note, that not all variables have been mapped to features yet. Those, not in the
-table can be queried and set by the low-level variable access (see below). But
-whenever a named feature is available for a given variable, you should use the
-more convenient and more robust access via the feature.
+table can be queried and set by the low-level variable access methods (see
+below). But whenever a named feature is available for a given variable, it is
+recommended to use the more convenient and more robust access via the feature.
 
 
 Getting the value of a feature
@@ -78,12 +78,12 @@ Getting the value of a feature
 
 Use the ``get`` subcommand to query the value of a given feature.
 
-For example, to query the temperature of the outside air, you can issue::
+For example, to query the temperature of the outside air, issue::
 
   eazyctrl get helios-kwl.fritz.box temp_outside_air
 
-The first argument is the host name (or IP-address) of the device, followed by
-the feature name. The result is printed on the console, like::
+The first argument is the host name of the remote device (or its IP-address),
+followed by the feature name. The result is printed on the console, like::
 
   23.3
 
@@ -93,7 +93,7 @@ Setting the value of a feature
 
 Use the ``set`` subcommand to set the value of a given feature.
 
-For example, in order to set the fan stage to level 2, you can issue::
+For example, in order to set the fan stage to level 2, issue::
 
   eazyctrl set helios-kwl.fritz.box fan_stage 2
 
@@ -104,15 +104,15 @@ was successful.
 Getting the value of a variable
 -------------------------------
 
-The command line tool allows also to query a given variable directly. It is a
-kind of "low-level" access and you should prefer the ``get`` method instead,
-whenever it is applicable.
+The command line tool allows to query a variable directly by using its name.
+This direct variable accesss should only be used, if the given variable has not
+been mapped to a feature yet.
 
 Additionally to the name of the variable, you also have to provide the maximal
-length of the expected answer (which can be looked up in the EasyConfigs
+length of the expected answer (which can be looked up in the EasyControls
 manual).
 
-For example, to query the fan stage directly via the ``v00102`` variable ::
+For example, to query the fan stage by reading the variable ``v00102``, issue ::
 
   eazyctrl getvar helios-kwl.fritz.box v00102 1
 
@@ -120,13 +120,13 @@ For example, to query the fan stage directly via the ``v00102`` variable ::
 Setting the value of a variable
 -------------------------------
 
-The command line tool allows also to set a given variable directly. It is a kind
-of "low-level" access and you should prefer the ``set`` method instead, whenever
-it is applicable.
+The command line tool allows to set a variable directly by using its name.  This
+direct variable accesss should only be used, if the given variable has not been
+mapped to a feature yet.
 
 Note, that the value you provide for the variable must be exactly in the right
 format since it is passed unaltered to the remote device. Consult the
-EasyConfigs manual about the expected format for each variable.
+EasyControls manual about the expected format for each variable.
 
 For example, to set the fan stage directly via the ``v00102`` variable, issue ::
 
@@ -136,14 +136,13 @@ For example, to set the fan stage directly via the ``v00102`` variable, issue ::
 Using as a Python module
 ========================
 
-The functionality of the command line tool can be also directly accessed from
-Python using the ``eazyctrl`` module. The module can be imported in the usual
-way ::
+The functionality of EazyCtrl can be accessed using the ``eazyctrl`` Python
+module. The module can be imported in the usual way ::
 
   import eazyctrl
 
-You should access the module functionality mainly trough the high level class
-`EazyController`.
+The high level class `EazyController` provides an access similar to the command
+line tool.
 
 
 Obtaining the feature list
@@ -159,7 +158,7 @@ For example the snippet ::
   ftrlist = eazyctrl.EazyController.get_feature_list()
   print(ftrlist)
 
-would result in ::
+results in ::
 
   [('fan_stage', {'rw': True, 'varname': 'v00102'}),
    ('temp_outside_air', {'rw': False, 'varname': 'v00104'}),
@@ -172,9 +171,9 @@ Getting the value of a feature
 ------------------------------
 
 The method ``get_feature()`` returns the value of a given feature. The value is
-converted to an appropriate Python-type (e.g. integer, float, etc.).
+converted to an appropriate Python type (e.g. integer, float, etc.).
 
-As an example, let's query the outside temperature sensor of the device ::
+The following example queries the value of the outside air temperature sensor ::
 
   host = 'helios-kwl.fritz.box'   # replace with the IP-address of your device
   ctrl = eazyctrl.EazyController(host)
@@ -189,10 +188,10 @@ This results in ::
 Setting the value of a feature
 ------------------------------
 
-You can use the method ``set_feature()`` to set a value for a given feature. You
-should provide the value as a Python-type (e.g. integer, float, etc.) and it
-will be converted to the right text representation before being passed to the
-device.
+You can use the ``set_feature()`` method to set a value for a given feature. You
+should provide the value as a Python type (e.g. integer, float, etc.) and it
+will be automatically converted to the right text representation before being
+passed to the device.
 
 For example, you can set the fan stage to level 3 by the following snippet::
 
@@ -222,9 +221,9 @@ Getting the value of a variable
 
 Similar to the command line tool, the `EazyController` object allows direct
 variable access as well. This low-level function returns the response of the
-server unaltered as a string, unless you specify a conversion function. Beyound
+server unaltered as a string, unless you specify a conversion function. Beyond
 the variable name, you also have to pass the length of the expected answer (to
-be found in the manual) to the method.
+be found in the EasyConfigs manual).
 
 Let's query the outside air temperature via the v00104 variable and convert it
 to a float value ::
@@ -263,8 +262,8 @@ If everything went well, you should obtain ::
 Notes on concurrent access conflicts
 ====================================
 
-Due to its design, the EasyConfigs protocol can not deal with concurrent access
-of multiple clients. Especially, reading out a variable/feature is very
+Due to its design, the EasyControls protocol can not deal well with concurrent
+accesses of multiple clients. Especially, reading out a variable/feature is very
 error-prone as it needs two communications. The first communication tells the
 server, which variable should be queried, while the corresponding variable value
 is returned during the second communication. If between the first and second

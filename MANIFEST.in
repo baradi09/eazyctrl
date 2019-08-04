@@ -1,0 +1,4 @@
+include LICENSE.txt
+include CHANGELOG.rst
+global-exclude *.pyc
+global-exclude *~
