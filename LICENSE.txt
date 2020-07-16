@@ -1,4 +1,4 @@
-Copyright (c) 2019, Bálint Aradi
+Copyright (c) 2019-2020, Bálint Aradi
 
 All rights reserved.
 

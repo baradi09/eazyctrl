@@ -6,7 +6,7 @@
 #
 ###############################################################################
 #
-#  Copyright (c) 2019, Bálint Aradi
+#  Copyright (c) 2019-2020, Bálint Aradi
 #
 #  All rights reserved.
 #
@@ -109,6 +109,10 @@ _FIELDS_MODBUS_ERROR = {
     'error_code': ((7, 8), 'B'),
     'exception_code': ((8, 9), 'B'),
 }
+
+
+# Upper bound for transaction ids (maximal allowed value + 1)
+_TRANSID_RANGE = 2**16
 
 
 class NamedByteArray(bytearray):
@@ -293,7 +297,7 @@ class EazyCommunicator:
             port: Port of the remote device (default: standard modbus port)
             timeout: Time-out for the socket communication with the device.
         """
-        self._transid = random.randrange(0, 2**16 - 1)
+        self._transid = random.randrange(0, _TRANSID_RANGE)
         self._server = server
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.connect((server, port))
@@ -332,7 +336,7 @@ class EazyCommunicator:
         data = bytearray(datalen)
         data[:vardeflen] = bytearray(vardef, encoding='ascii')
 
-        self._transid += 1
+        self._transid = (self._transid + 1) % _TRANSID_RANGE
         sendmsg = Modbus16Request()
         sendmsg['transaction_identifier'] = self._transid
         sendmsg['unit_identifier'] = _KWL_UNIT_ID
@@ -375,7 +379,7 @@ class EazyCommunicator:
         datalen = (answerlen + 2) // 2 * 2
 
         sendmsg = Modbus03Request()
-        self._transid += 1
+        self._transid = (self._transid + 1) % _TRANSID_RANGE
         sendmsg['transaction_identifier'] = self._transid
         sendmsg['unit_identifier'] = _KWL_UNIT_ID
         sendmsg['starting_address'] = 1
