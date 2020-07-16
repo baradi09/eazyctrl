@@ -293,7 +293,7 @@ class EazyCommunicator:
             port: Port of the remote device (default: standard modbus port)
             timeout: Time-out for the socket communication with the device.
         """
-        self._transid = random.randrange(0, 2**16)
+        self._transid = random.randrange(0, 2**16 - 1)
         self._server = server
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.connect((server, port))
