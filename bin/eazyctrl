@@ -60,11 +60,19 @@ _READ_VAR_TIMEOUT_RANGE = 0.1, 0.5
 
 # Dictionary of known air exchanger (KWL) features.
 _KWL_FEATURES = {
+    'party_mode': ("v00094", 1, int, str),
+    'standby_mode': ("v00099", 1, int, str),
+    'operating_mode': ("v00101", 1, int, str),
     'fan_stage': ("v00102", 1, int, str),
+    'fan_stage_percentage': ("v00103", 3, int, None),
     'temp_outside_air': ("v00104", 7, float, None),
     'temp_supply_air': ("v00105", 7, float, None),
     'temp_outgoing_air': ("v00106", 7, float, None),
     'temp_extract_air': ("v00107", 7, float, None),
+    'supply_air_rpm': ("v00348", 4, int, None),
+    'extract_air_rpm': ("v00349", 4, int, None),
+    'bypass': ("v02119", 1, int, None),
+    'filter_change_remaining_time': ("v01033", 10, int, None),
 }
 
 # Modbus unit id used by the air exchanger devices.
