@@ -12,8 +12,6 @@ the publicly accessible documentation for the EasyControls Modbus/TCP interface
 and for the Modbus/TCP protocol. They were only tested with a Helios KWL EC 300
 W air exchanger. **Use them on your own risk**.
 
-The tools are distributed under the terms of the *2-clause BSD License*.
-
 
 Installing
 ==========
@@ -133,8 +131,8 @@ For example, to set the fan stage directly via the ``v00102`` variable, issue ::
   eazyctrl setvar helios-kwl.fritz.box v00102 1
 
 
-Using as a Python module
-========================
+Using EazyCtrl as a Python module
+=================================
 
 The functionality of EazyCtrl can be accessed using the ``eazyctrl`` Python
 module. The module can be imported in the usual way ::
@@ -258,24 +256,32 @@ If everything went well, you should obtain ::
   Expected: 3, obtained 3
 
 
-
 Notes on concurrent access conflicts
 ====================================
 
 Due to its design, the EasyControls protocol can not deal well with concurrent
 accesses of multiple clients. Especially, reading out a variable/feature is very
 error-prone as it needs two communications. The first communication tells the
-server, which variable should be queried, while the corresponding variable value
-is returned during the second communication. If between the first and second
-communication a second client starts a query for a different variable, the first
-client may get back the value for the wrong variable (namely the one the second
-client asked for).
+server, which variable should be queried, while the actual value is returned
+during a second communication. If between the first and second communication a
+second client starts a query for a different variable, the first client may get
+back the value for the wrong variable (namely the one the second client asked
+for).
 
 When EazyCtrl detects, that the wrong variable was returned, it will repeat the
 given query again after a short random time delay (maximally 3 times). While
 this strategy should be enough to resolve concurrent access conflicts in typical
-use cases, it may fail if too many clients / threads are accessing the device at
-the same time.
+use cases, it may fail if too many clients / threads are accessing the same
+device concurrently at the same time.
 
-Therefore, always try to make sure, that only a single client is accessing the
-device at a time.
+In order to prevent issues due to concurrent acces, make sure that only a single
+client or thread accesses the device at a given time. If your home automation
+system tends to use concurrent threads to query various values simultaneously
+(e.g. air temperatures), you may need to pipe the queries through a single proxy
+object with locking features to ensure serial access.
+
+
+License
+=======
+
+EazyCtrl is distributed under the terms of the *2-clause BSD License*.

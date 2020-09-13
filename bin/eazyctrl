@@ -59,6 +59,14 @@ _READ_VAR_NR_TRIALS = 3
 _READ_VAR_TIMEOUT_RANGE = 0.1, 0.5
 
 # Dictionary of known air exchanger (KWL) features.
+# Key: feature name (abbreviated version of the description in the manual)
+# Value: Tuple consisting of following values:
+#     - variable name,
+#     - nr. of chars to trasmint
+#     - function to use to convert received char into Python native type
+#     - function to use to convert Python native type into chars to be sent
+#       or None, if the property is read-only.
+#
 _KWL_FEATURES = {
     'party_mode': ("v00094", 1, int, str),
     'standby_mode': ("v00099", 1, int, str),
