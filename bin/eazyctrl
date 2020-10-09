@@ -81,6 +81,9 @@ _KWL_FEATURES = {
     'extract_air_rpm': ("v00349", 4, int, None),
     'bypass': ("v02119", 1, int, None),
     'filter_change_remaining_time': ("v01033", 10, int, None),
+    'internal_humidity_control': ("v02142", 1, int, str),
+    'sensor_sleeptime_from': ("v02149", 7, str, str),
+    'sensor_sleeptime_to': ("v02150", 7, str, str),
 }
 
 # Modbus unit id used by the air exchanger devices.
