@@ -2,6 +2,16 @@
 Change Log
 ==========
 
+
+0.4 (2022-02-20)
+================
+
+Added
+-----
+
+* Object variants supporting async io
+
+
 0.3 (2020-08-25)
 ================
 
