@@ -42,6 +42,7 @@ import time
 import random
 import socket
 import struct
+import asyncio
 
 # Standard Modbus TCP port
 _MODBUS_TCP_PORT = 502
@@ -130,6 +131,7 @@ _FIELDS_MODBUS_ERROR = {
 # Upper bound for transaction ids (maximal allowed value + 1)
 _TRANSID_RANGE = 2**16
 
+_read_lock = asyncio.Lock()
 
 class NamedByteArray(bytearray):
     """Simple wrapper class to access byte arrays slices by name.
@@ -298,6 +300,288 @@ class UnexpectedModbusResponse(Exception):
         super().__init__(msg)
         self.sendmsg = sendmsg
         self.response = response
+
+
+class AsyncEazyCommunicator:
+    def __init__(self, server, port=_MODBUS_TCP_PORT, timeout=_SOCKET_TIMEOUT):
+        """Initializes an EasyCommunicator instance.
+
+        Args:
+            server: IP-address of the remote EasyControls device.
+            port: Port of the remote device (default: standard modbus port)
+            timeout: Time-out for the socket communication with the device.
+        """
+        self._transid = random.randrange(0, _TRANSID_RANGE)
+        self._server = server
+        self._port = port
+        self._reader: asyncio.StreamReader = None
+        self._writer: asyncio.StreamWriter = None
+        self._timeout = timeout
+
+    async def close(self):
+        """Closes the communicator."""
+        self._writer.close()
+        await self._writer.wait_closed()
+
+    async def __aenter__(self):
+        self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(self._server, self._port), self._timeout)
+        return self
+
+    async def __aexit__(self, exception_type, exception_value, traceback):
+        await self.close()
+
+    async def write_variable(self, vardef):
+        """Writes a variable on the remote device.
+
+        Args:
+            vardef: Variable definition. It should have either the form
+                ``varname=varvalue``, in order to set the corresponding variable
+                on the remote device, or ``varname`` if the value of the given
+                variable should be queried. In the latter case, the
+                ``read_variable()`` method must be called immediately after this
+                call to obtain the variable value.
+        """
+
+        # Transmitted data must be rounded up to even bytes
+        vardeflen = len(vardef)
+        datalen = (vardeflen + 2) // 2 * 2
+        data = bytearray(datalen)
+        data[:vardeflen] = bytearray(vardef, encoding='ascii')
+
+        self._transid = (self._transid + 1) % _TRANSID_RANGE
+        sendmsg = Modbus16Request()
+        sendmsg['transaction_identifier'] = self._transid
+        sendmsg['unit_identifier'] = _KWL_UNIT_ID
+        sendmsg['starting_address'] = 1
+        sendmsg['quantity_of_registers'] = datalen // 2
+        sendmsg['byte_count'] = datalen
+        sendmsg['registers_value'] = data
+        self._writer.write(sendmsg)
+        
+        response = await self._reader.read(_RECV_BUFFER_SIZE)
+        exc = None
+        try:
+            respmsg = Modbus16Response(response)
+        except ValueError:
+            msg = "Unexpected modbus response (probably modbus error)"
+            exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                           response=response)
+        else:
+            if respmsg['function_code'] != 16:
+                msg = "Unexpected function code in modbus response"
+                exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                               response=response)
+        if exc is not None:
+            raise exc
+
+    async def read_variable(self, varnamelen, varlen):
+        """Reads the value of a variable on the remote device.
+
+        You typically call this function after having called the
+        ``write_variable()`` method with a variable defintion of the type
+        ``varname``.
+
+        Args:
+           varnamelen: Lenght of the variable name to be queried.
+           varlen: Length (nr. of bytes) of the expected response.
+        """
+
+        answerlen = varnamelen + 1 + varlen
+        datalen = (answerlen + 2) // 2 * 2
+
+        sendmsg = Modbus03Request()
+        self._transid = (self._transid + 1) % _TRANSID_RANGE
+        sendmsg['transaction_identifier'] = self._transid
+        sendmsg['unit_identifier'] = _KWL_UNIT_ID
+        sendmsg['starting_address'] = 1
+        sendmsg['quantity_of_registers'] = datalen // 2
+        self._writer.write(sendmsg)
+
+        response = await self._reader.read(_RECV_BUFFER_SIZE)
+        exc = None
+        try:
+            respmsg = Modbus03Response(response)
+        except ValueError:
+            msg = "Unexpected modbus response (probably modbus error)"
+            exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                           response=response)
+
+        else:
+            if respmsg['function_code'] != 3:
+                msg = "Unexpected function code in modbus response"
+                exc = UnexpectedModbusResponse(msg=msg, sendmsg=sendmsg,
+                                               response=response)
+        if exc is not None:
+            raise exc
+        answer = respmsg['registers_value'].rstrip(b'\x00').decode('ascii')
+        return answer[:varnamelen], answer[varnamelen + 1:]
+
+
+class AsyncEazyController:
+    """High-level controller to control and query a remote EasyControls device.
+
+    You can either read or write variables directly  ::
+
+        host = "mydevice.mynet"
+        ctrl = EazyController(host)
+
+        # Querying the outside air temperature
+        temp_out = ctrl.get_variable("v00104", 7, conversion=float)
+
+        # Setting the fan level to 1
+        ctrl.set_variable("v00102", 1, conversion="{:d}")
+
+
+    or access the various features via high-level feature calls and let
+    EazyController make the data type conversion ::
+
+        host = "mydevice.mynet"
+        ctrl = EazyController(host)
+
+        # Querying the outside air temperature
+        temp_out = ctrl.get_feature("temperature_outside_air")
+
+        # Setting the fan level to 1
+        ctrl.set_feature("fan_stage", 1)
+
+    Note: The routines of the controller are subject to potential coincidency
+    conflicts due to the design of the protocol of the KWL-devices. In case of
+    a conflict the routines retry the communication after a random
+    delay. Nevertheless, the caller should make its best efforts, that for a
+    given device only one ``get_variable()``, ``set_variable()``,
+    ``get_feature()`` or ``set_feature()`` call is active at a given
+    time. (E.g. using thread-locks in a threaded environment.)
+
+    """
+
+    def __init__(self, server, *args):
+        self._server = server
+        self._serverargs = args
+
+    async def get_variable(self, varname, varlen, conversion=None):
+        """Queries the value of a given variable on the remote device.
+
+        Args:
+            varname: name of the variable to query.
+            varlen: length of the expected response (should be equal of longer
+                as the response of the server)
+            conversion: Function for converting the response into a Python
+                type. Default: None -- no conversion is made, the string as
+                obtained from the server is returned. The value of the argument
+                can be either a formatting string or a function expecting one
+                argument and returning the converted value.
+
+        Returns:
+            Value of the queried variable or None, if the query failed.
+
+        """
+        for itrial in range(_READ_VAR_NR_TRIALS):
+            if itrial:
+                await asyncio.sleep(random.uniform(*_READ_VAR_TIMEOUT_RANGE))
+            async with AsyncEazyCommunicator(self._server, *self._serverargs) as comm:
+                async with _read_lock:
+                    try:
+                        await comm.write_variable(varname)
+                    except UnexpectedModbusResponse:
+                        continue
+                    varnamelen = len(varname)
+                    try:
+                        recvvarname, varval = await comm.read_variable(varnamelen, varlen)
+                    except UnexpectedModbusResponse:
+                        continue
+            if recvvarname == varname:
+                if conversion is None:
+                    return varval
+                return conversion(varval)
+        return None
+
+    async def set_variable(self, varname, varval, conversion=None):
+        """Sets a variable on the remote device to a given value.
+
+        Args:
+            varname: Name of the variable to set.
+
+            varval: Value to set. It should be either the proper string
+                representation of the variable which can be directly sent
+                to the server, or a Python type which is then converted
+                using the optional conversion argument.
+                as the response of the server)
+
+            conversion: Function for converting the variable value into the
+                proper string representation which can be sent to the server
+                directly. Default: None -- no conversion is made, the variable
+                value must be a string, which is sent directly to the server.
+                The value of the argument can be either a formatting string or a
+                function expecting one argument and returning the string
+                representation which is then sent to the server.
+
+        Returns:
+            True if no error occured during setting the variable, False
+            otherwise.
+        """
+        if conversion is None:
+            varcontent = varval
+        elif isinstance(conversion, str):
+            varcontent = conversion.format(varval)
+        else:
+            varcontent = conversion(varval)
+        vardef = "{}={}".format(varname, varcontent)
+        for itrial in range(_READ_VAR_NR_TRIALS):
+            if itrial:
+                await asyncio.sleep(random.uniform(*_READ_VAR_TIMEOUT_RANGE))
+            async with AsyncEazyCommunicator(self._server, *self._serverargs) as comm:
+                try:
+                    await comm.write_variable(vardef)
+                except UnexpectedModbusResponse:
+                    continue
+            return True
+        return False
+
+    async def get_feature(self, feature):
+        """Queries the value of a given feature of the remote device.
+
+        Args:
+            feature: Name of the feature to query.
+
+        Returns:
+            Value of the queried feature or None if the query was unsuccessful.
+        """
+        featureparams = _KWL_FEATURES.get(feature)
+        if featureparams is None:
+            raise ValueError("Unknown feature '" + feature + "'")
+        varname, varlen, getconv, _ = featureparams
+        return await self.get_variable(varname, varlen, getconv)
+
+    async def set_feature(self, feature, featureval):
+        """Sets the value of a given feature on the remote device.
+
+        Args:
+            feature: Name of the feature to query.
+            featureval: Value for the given feature.
+        """
+        featureparams = _KWL_FEATURES.get(feature)
+        if featureparams is None:
+            raise ValueError("Unknown feature '" + feature + "'")
+        varname, _, _, setconv = featureparams
+        if setconv is None:
+            raise ValueError("Feature '" + feature + "' is read-only")
+        return await self.set_variable(varname, featureval, setconv)
+
+    @staticmethod
+    def get_feature_list():
+        """Returns the list of the available features.
+
+        Returns:
+            List of tuples, each of them containing the feature name and a
+            dictionary with the feature parameters.
+
+        """
+        feature_list = []
+        for feature, featureparams in _KWL_FEATURES.items():
+            rw = featureparams[-1] is not None
+            features = {'varname': featureparams[0], 'rw': rw}
+            feature_list.append((feature, features))
+        return feature_list
 
 
 class EazyCommunicator:
